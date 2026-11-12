@@ -3,7 +3,6 @@ import re
 import os
 import asyncio
 from datetime import datetime, timedelta
-from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters,
@@ -12,7 +11,7 @@ from telegram.ext import (
 
 # ================= কনফিগারেশন =================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "9088126091:AAFE8D5PkiggMHTxGFbbb8mxOIwaAlF5NOg")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")  # Render-এ সেট করবেন
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://red-x-guard.onrender.com")
 PORT = int(os.environ.get("PORT", 10000))
 CONTROLLER_IDS = [6729349333, 8267564240]
 
@@ -62,7 +61,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🦅 **RED'X GUARD কন্ট্রোল প্যানেল**", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
 async def panel_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global bot_active  # <--- এটি ফাংশনের একদম শুরুতে নিয়ে আসা হয়েছে
+    global bot_active
     q = update.callback_query
     await q.answer()
     if not is_controller(q.from_user.id):
@@ -105,10 +104,10 @@ async def panel_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(f"🔘 অবস্থা: **{st}**", reply_markup=InlineKeyboardMarkup(btns), parse_mode="Markdown")
 
     elif d == "set_on":
-        bot_active = True # global ডিক্লেয়ার আগেই করা হয়েছে
+        bot_active = True
         await q.edit_message_text("✅ চালু হয়েছে।")
     elif d == "set_off":
-        bot_active = False # global ডিক্লেয়ার আগেই করা হয়েছে
+        bot_active = False
         await q.edit_message_text("❌ বন্ধ হয়েছে।")
 
     elif d.startswith("leave_"):
@@ -200,23 +199,24 @@ async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(msg)
             groups[update.effective_chat.id] = update.effective_chat.title or str(update.effective_chat.id)
 
-# ================= Webhook সার্ভার =================
-async def health(request):
-    return web.Response(text="OK")
+# ================= মেইন =================
+if __name__ == "__main__":
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(panel_buttons))
+    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
 
-async def webhook(request):
-    data = await request.json()
-    update = Update.de_json(data, application.bot)
-    await application.process_update(update)
-    return web.Response(text="OK")
-
-application = Application.builder().token(BOT_TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CallbackQueryHandler(panel_buttons))
-application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
-application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
-
-async def main():
+    # রেন্ডারে ওয়েবহুক চালু করা (পোলিং এর দরকার নেই, তাই Conflict হবে না)
+    logger.info("🦅 RED'X GUARD Webhook সার্ভার চালু হচ্ছে...")
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="/webhook",
+        webhook_url=f"{WEBHOOK_URL}/webhook",
+        drop_pending_updates=True
+        )
     await application.initialize()
     await application.bot.set_webhook(f"{WEBHOOK_URL}/{BOT_TOKEN}")
     app = web.Application()
